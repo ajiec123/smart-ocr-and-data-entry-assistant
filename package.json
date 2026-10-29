@@ -1,0 +1,32 @@
+{
+  "name": "smart-ocr",
+  "version": "1.0.0",
+  "description": "Smart OCR & Data Entry Assistant - Offline desktop receipt parser and Excel generator",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node scripts/test-parser.js",
+    "keygen": "node scripts/generate-license.js",
+    "build": "electron-builder --win portable"
+  },
+  "keywords": [
+    "ocr",
+    "receipt-parser",
+    "excel",
+    "tesseract",
+    "offline",
+    "electron"
+  ],
+  "author": "SmartOCR Team",
+  "license": "Commercial",
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "node-machine-id": "^1.1.12",
+    "pdfjs-dist": "^6.4.299",
+    "sharp": "^0.33.5",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
