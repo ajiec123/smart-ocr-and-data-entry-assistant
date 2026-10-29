@@ -27,9 +27,13 @@ class ImageProcessor {
     }
 
     // Resize if too huge to keep processing snappy while preserving OCR text quality
+    // OR upscale if image is low-resolution (e.g. mobile thermal receipt captures < 1000px)
     const metadata = await pipeline.metadata();
     if (metadata.width && metadata.width > maxWidth) {
       pipeline = pipeline.resize({ width: maxWidth, withoutEnlargement: true });
+    } else if (metadata.width && metadata.width < 1000) {
+      // Upscale low-res thermal receipts so Tesseract can resolve dot-matrix text & faint digits
+      pipeline = pipeline.resize({ width: 1200, withoutEnlargement: false, kernel: sharp.kernel.lanczos3 });
     }
 
     switch (preset) {
