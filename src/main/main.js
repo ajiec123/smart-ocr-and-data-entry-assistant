@@ -152,17 +152,31 @@ function setupIpcHandlers() {
       // 2. Send progress: Running OCR
       event.sender.send('ocr:progress', { status: 'ocr_starting', progress: 0.35, message: 'Reading document text...' });
 
-      const ocrResult = await ocrEngine.recognize(processed.buffer, (m) => {
+      let ocrResult = await ocrEngine.recognize(processed.buffer, (m) => {
         if (m.status === 'recognizing text') {
-          const p = 0.35 + (m.progress || 0) * 0.5;
+          const p = 0.35 + (m.progress || 0) * 0.45;
           event.sender.send('ocr:progress', { status: m.status, progress: p, message: `Recognizing text (${Math.round(m.progress * 100)}%)...` });
         }
-      });
+      }, { psm: '4' });
 
       // 3. Send progress: Parsing data
-      event.sender.send('ocr:progress', { status: 'parsing', progress: 0.90, message: 'Structuring fields & line items...' });
+      event.sender.send('ocr:progress', { status: 'parsing', progress: 0.85, message: 'Structuring fields & line items...' });
 
-      const parsed = receiptParser.parse(ocrResult.text);
+      let parsed = receiptParser.parse(ocrResult.text);
+
+      // 4. Smart fallback: If PSM 4 yielded no items or an unresolved toll fare, try uniform block (PSM 6)
+      if (parsed.items.length === 0 || (parsed.detectedProfile === 'toll' && parsed.total === 0)) {
+        try {
+          const fallbackRes = await ocrEngine.recognize(processed.buffer, null, { psm: '6' });
+          const fallbackParsed = receiptParser.parse(fallbackRes.text);
+          if (fallbackParsed.items.length > parsed.items.length || (fallbackParsed.total > 0 && parsed.total === 0)) {
+            ocrResult = fallbackRes;
+            parsed = fallbackParsed;
+          }
+        } catch (e) {
+          console.warn('Fallback OCR pass skipped:', e.message);
+        }
+      }
 
       event.sender.send('ocr:progress', { status: 'completed', progress: 1.0, message: 'Done' });
 

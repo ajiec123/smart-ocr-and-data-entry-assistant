@@ -36,6 +36,15 @@ class ImageProcessor {
       pipeline = pipeline.resize({ width: 1200, withoutEnlargement: false, kernel: sharp.kernel.lanczos3 });
     }
 
+    // Add safe white padding around borders to prevent edge-hugging receipt text from being clipped by OCR engines
+    pipeline = pipeline.extend({
+      top: 30,
+      bottom: 50,
+      left: 30,
+      right: 30,
+      background: { r: 255, g: 255, b: 255 }
+    });
+
     switch (preset) {
       case 'grayscale':
         pipeline = pipeline
@@ -51,9 +60,8 @@ class ImageProcessor {
           .withMetadata({ density: 300 })
           .grayscale()
           .normalize(); // stretch dynamic range safely without clipping faint text
-        if (sharpen) {
-          pipeline = pipeline.sharpen({ sigma: 0.8, m1: 1.0, m2: 1.5 });
-        }
+        // Note: Excessive unsharp masking introduces false edge artifacts on dot-matrix and receipt numbers.
+        // We preserve clean contrast normalization for maximum OCR character clarity.
         break;
 
       case 'binarize':

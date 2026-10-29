@@ -62,13 +62,18 @@ class OCREngine {
   }
 
   /**
-   * Recognize text from an image buffer or file path
+   * Recognize text from an image buffer or file path with optimal receipt page segmentation
+   * Uses PSM 4 (single column variable text) as primary, with PSM 6 fallback if needed
    * @param {Buffer|string} imageInput
    * @param {Function} onProgress - (progressEvent) => void
+   * @param {Object} options - { psm: '4' | '6' | '3' }
    * @returns {Promise<{ text: string, confidence: number, lines: Array }>}
    */
-  async recognize(imageInput, onProgress) {
+  async recognize(imageInput, onProgress, options = {}) {
     const worker = await this.getWorker(onProgress);
+
+    const targetPsm = options.psm || '4';
+    await worker.setParameters({ tessedit_pageseg_mode: String(targetPsm) });
 
     const result = await worker.recognize(imageInput);
     

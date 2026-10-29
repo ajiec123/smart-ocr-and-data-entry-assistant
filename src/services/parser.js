@@ -307,8 +307,8 @@ class ReceiptParser {
 
       // Check if line is the gate name directly above the date/time line (e.g. "CIMANGGIS3" or "CIBUBUR UTAMA")
       if (!gate) {
-        // Strip leading/trailing punctuation noise like "~~ ", "—— "
-        const cleaned = line.replace(/^[~—\-_.\s|:]+/, '').replace(/[~—\-_.\s|:]+$/, '').trim();
+        // Strip leading/trailing punctuation noise like "~~ ", "—— ", "~~ ("
+        const cleaned = line.replace(/^[~—\-_.\s|:()]+/, '').replace(/[~—\-_.\s|:()]+$/, '').trim();
         const isGateCandidate = /^[A-Za-z0-9\s/-]{3,25}$/.test(cleaned) &&
           !upper.includes('JASAMARGA') &&
           !upper.includes('INFO') &&
@@ -334,7 +334,8 @@ class ReceiptParser {
     if (gate) {
       if (/^[A-Za-z]+[0-9]+$/.test(gate)) {
         gate = gate.replace(/([A-Za-z]+)([0-9]+)/, '$1 $2');
-      } else if (/CIMANGGIS[I1]?$/i.test(gate)) {
+      }
+      if (/(?:CIMANGGIS|CIHANGGIS|IHANGGIS|GIMANGGIS)[I13]?$/i.test(gate.replace(/\s+/g, ''))) {
         gate = 'CIMANGGIS 3';
       }
     }
@@ -387,11 +388,17 @@ class ReceiptParser {
       return u.includes('SALDO') || u.includes('SALDC') || u.includes('SALDU') || u.includes('SISA');
     };
 
+    // Helper to check if a line is a contact or info hotline
+    const isHotlineLine = (line) => {
+      const u = line.toUpperCase();
+      return u.includes('14080') || u.includes('13080') || u.includes('3080') || u.includes('113080') || u.includes('HOTLINE') || u.includes('INFO') || u.includes('TEL');
+    };
+
     // Priority 1: Check lines explicitly labeled with TARIF, BEA TOL, or GOL
     for (const line of lines) {
       const upper = line.toUpperCase();
       if (isSaldoLine(upper)) continue; // Skip card balance
-      if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+      if (isHotlineLine(upper)) continue;
       if (upper.includes('SERI') || upper.includes('RESI')) continue;
       if (upper.includes('S/N') || upper.includes('SN:')) continue;
 
@@ -411,7 +418,7 @@ class ReceiptParser {
       for (const line of lines) {
         const upper = line.toUpperCase();
         if (isSaldoLine(upper)) continue;
-        if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+        if (isHotlineLine(upper)) continue;
         if (upper.includes('SERI') || upper.includes('RESI')) continue;
         if (upper.includes('S/N') || upper.includes('SN:')) continue;
         if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(line)) continue; // Date line
@@ -430,7 +437,7 @@ class ReceiptParser {
       for (const line of lines) {
         const upper = line.toUpperCase();
         if (isSaldoLine(upper)) continue;
-        if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+        if (isHotlineLine(upper)) continue;
         if (upper.includes('SERI') || upper.includes('RESI')) continue;
         if (upper.includes('S/N') || upper.includes('SN:')) continue;
         if (line.includes('/')) continue; // Skip shift/lane counters
@@ -458,7 +465,7 @@ class ReceiptParser {
       for (const line of lines) {
         const upper = line.toUpperCase();
         if (isSaldoLine(upper)) continue;
-        if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+        if (isHotlineLine(upper)) continue;
         if (upper.includes('SERI') || upper.includes('RESI')) continue;
         if (upper.includes('S/N') || upper.includes('SN:')) continue;
         if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(line)) continue;
