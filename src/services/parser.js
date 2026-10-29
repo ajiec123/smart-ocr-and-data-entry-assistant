@@ -31,6 +31,10 @@ class ReceiptParser {
     // Line items table
     const items = this._extractLineItems(lines, totals);
 
+    // Category & Profile detection
+    const category = this._guessCategory(merchant, items, rawText);
+    const detectedProfile = this._detectProfile(rawText, merchant, category);
+
     // If items were found, recalculate verification check
     const itemsSum = items.reduce((sum, item) => sum + (item.total || 0), 0);
     const expectedTotal = totals.total || totals.subtotal || itemsSum;
@@ -44,7 +48,8 @@ class ReceiptParser {
       invoiceNumber: invoiceNo,
       cashier,
       paymentMethod,
-      category: this._guessCategory(merchant, items),
+      category,
+      detectedProfile,
       subtotal: totals.subtotal || (items.length > 0 ? itemsSum : 0),
       tax: totals.tax || 0,
       serviceCharge: totals.service || 0,
@@ -81,6 +86,26 @@ class ReceiptParser {
   }
 
   _extractMerchant(lines) {
+    // Priority 1: Check for nationwide toll operators (Jasa Marga, CMNP, Hutama Karya, Astra Tol)
+    for (const line of lines) {
+      const upper = line.toUpperCase();
+      if (upper.includes('JASAMARGA') || upper.includes('JASA MARGA')) {
+        if (upper.includes('TOLLROAD OPERATOR') || upper.includes('JMTO') || upper.includes('JMTM')) {
+          return 'PT JASAMARGA TOLLROAD OPERATOR';
+        }
+        return 'PT JASA MARGA (PERSERO) TBK';
+      }
+      if (upper.includes('CITRA MARGA') || upper.includes('CMNP')) {
+        return 'PT CITRA MARGA NUSAPHALA PERSADA TBK';
+      }
+      if (upper.includes('HUTAMA KARYA')) {
+        return 'PT HUTAMA KARYA (PERSERO)';
+      }
+      if (upper.includes('ASTRA') && upper.includes('TOL')) {
+        return 'ASTRA INFRA TOLL ROAD';
+      }
+    }
+
     // The merchant is almost always in the first 1-4 lines.
     // Skip lines with dates, receipt headers like "SELAMAT DATANG", wifi, or phone numbers/addresses.
     const skipKeywords = ['SELAMAT', 'DATANG', 'WELCOME', 'STRUK', 'NOTA', 'INVOICE', 'TELP', 'PHONE', 'WIFI', 'PASSWORD', 'NPWP', 'CABANG', 'JL.', 'JALAN', 'POS1', 'POS2', 'CHECK'];
@@ -204,7 +229,7 @@ class ReceiptParser {
   _extractInvoiceNumber(lines) {
     const patterns = [
       /(?:CHECK|CHECK\s*NO|CHEQUE)[.\s:#-]+([A-Za-z0-9\/-]{3,35})/i,
-      /(?:NO\.?\s*TRANSAKSI|NO\.?\s*STRUK|NO\.?\s*FAKTUR|NO\.?\s*INVOICE|NO\.?\s*NOTA)[:\s]+([A-Za-z0-9\/-]{3,35})/i,
+      /(?:NO\.?\s*RESI|RESI|NO\.?\s*TRANSAKSI|NO\.?\s*STRUK|NO\.?\s*FAKTUR|NO\.?\s*INVOICE|NO\.?\s*NOTA)[:\s]+([A-Za-z0-9\/-]{3,35})/i,
       /(?:STRUK|NOTA|BON|INVOICE|INV|TRANSACTION|RECEIPT|BILL|ORDER)[.\s:#-]+([A-Za-z0-9\/-]{4,30})/i,
       /(?:NO|NOMOR)[.\s:#-]+([A-Za-z0-9\/-]{4,30})/i,
       /#\s*([A-Za-z0-9\/-]{4,25})/i
@@ -225,6 +250,25 @@ class ReceiptParser {
     return '';
   }
 
+  _extractTollDetails(lines) {
+    let gate = '';
+    let ruas = '';
+    let gol = '';
+
+    for (const line of lines) {
+      const gateMatch = line.match(/(?:GERBANG\s*TOL|GERBANG\s*KELUAR|GERBANG\s*MASUK|GERBANG|GT)[:\s]+([A-Za-z0-9\s/-]{2,30})/i);
+      if (gateMatch && !gate) gate = gateMatch[1].trim();
+
+      const ruasMatch = line.match(/(?:RUAS\s*TOL|RUAS|CABANG)[:\s]+([A-Za-z0-9\s/-]{2,30})/i);
+      if (ruasMatch && !ruas) ruas = ruasMatch[1].trim();
+
+      const golMatch = line.match(/(?:GOLONGAN|GOL)[:\s]+([A-Za-z0-9IV]+)/i);
+      if (golMatch && !gol) gol = golMatch[1].trim();
+    }
+
+    return { gate, ruas, gol };
+  }
+
   _extractCashier(lines) {
     const cashierPattern = /(?:KASIR|CASHIER|OPERATOR|USER|PETUGAS)[:\s]+([A-Za-z0-9\s]{2,25})/i;
     for (const line of lines) {
@@ -243,6 +287,12 @@ class ReceiptParser {
 
   _extractPaymentMethod(lines) {
     const upperText = lines.join(' ').toUpperCase();
+    if (upperText.includes('E-TOLL') || upperText.includes('ETOLL')) return 'E-Toll';
+    if (upperText.includes('E-MONEY') || upperText.includes('EMONEY')) return 'E-Money Mandiri';
+    if (upperText.includes('FLAZZ')) return 'Flazz BCA';
+    if (upperText.includes('BRIZZI')) return 'Brizzi BRI';
+    if (upperText.includes('TAPCASH')) return 'TapCash BNI';
+    if (upperText.includes('LET IT FLO') || upperText.includes('FLO')) return 'Let It Flo';
     if (upperText.includes('QRIS')) return 'QRIS';
     if (upperText.includes('BCA')) return 'Debit/Credit BCA';
     if (upperText.includes('MANDIRI')) return 'Mandiri';
@@ -299,7 +349,20 @@ class ReceiptParser {
       const line = lines[i];
       const upper = line.toUpperCase();
 
-      if (/^(?:GRAND\s*TOTAL|TOTAL\s*AKHIR|TOTAL\s*BAYAR|TOTAL\s*BELANJA|TOTAL)\b/i.test(upper) &&
+      // Skip remaining card balance lines (e.g. SISA SALDO / SALDO AKHIR)
+      if (upper.includes('SALDO')) {
+        continue;
+      }
+
+      // Check for Indonesian toll tariffs (TARIF TOL, BEA TOL, TARIF)
+      if (/^(?:TARIF\s*TOL|BEA\s*TOL|BIAYA\s*TOL|TARIF\s*GOL|TARIF)\b/i.test(upper) ||
+          /(?:TARIF\s*TOL|BEA\s*TOL)[:\s]+(?:RP\.?\s*)?(\d{1,3}(?:[.,]\d{3})*|\d+)/i.test(upper)) {
+        const amt = findAmountInLine(line);
+        if (amt > 0) {
+          result.total = amt;
+          result.subtotal = amt;
+        }
+      } else if (/^(?:GRAND\s*TOTAL|TOTAL\s*AKHIR|TOTAL\s*BAYAR|TOTAL\s*BELANJA|TOTAL)\b/i.test(upper) &&
           !upper.includes('SUB') && !upper.includes('ITEM') && !upper.includes('QTY')) {
         const amt = findAmountInLine(line);
         if (amt > 0 && amt > result.total) {
@@ -330,8 +393,6 @@ class ReceiptParser {
     if (result.subtotal === 0 && result.total > 0) {
       result.subtotal = result.total;
     }
-
-    return result;
 
     return result;
   }
@@ -486,6 +547,30 @@ class ReceiptParser {
       }
     }
 
+    // Toll receipt heuristic: If no grocery/retail line items were extracted,
+    // check if this receipt is an Indonesian toll receipt and generate a synthetic item.
+    if (items.length === 0 && totals.total > 0) {
+      const toll = this._extractTollDetails(lines);
+      const isToll = lines.some(l => {
+        const u = l.toUpperCase();
+        return u.includes('JASAMARGA') || u.includes('JASA MARGA') || u.includes('GERBANG') || u.includes('TARIF TOL') || u.includes('BEA TOL') || u.includes('RUAS');
+      });
+
+      if (isToll) {
+        let descParts = ['Tarif Tol'];
+        if (toll.ruas) descParts.push(toll.ruas);
+        if (toll.gate) descParts.push(`(${toll.gate})`);
+        if (toll.gol) descParts.push(`Gol ${toll.gol}`);
+
+        items.push({
+          description: descParts.join(' '),
+          qty: 1,
+          unitPrice: totals.total,
+          total: totals.total
+        });
+      }
+    }
+
     return items;
   }
 
@@ -509,27 +594,60 @@ class ReceiptParser {
       .trim();
   }
 
-  _guessCategory(merchant, items) {
-    const m = (merchant || '').toUpperCase();
+  _guessCategory(merchant, items, rawText = '') {
+    const textUpper = (rawText + ' ' + (merchant || '')).toUpperCase();
     const itemNames = items.map(i => i.description.toUpperCase()).join(' ');
 
-    if (m.includes('INDOMARET') || m.includes('ALFAMART') || m.includes('SUPERINDO') || m.includes('MART')) {
+    if (textUpper.includes('JASAMARGA') || textUpper.includes('JASA MARGA') || textUpper.includes('GERBANG TOL') || textUpper.includes('TARIF TOL') || textUpper.includes('E-TOLL')) {
+      return 'Transport & Toll';
+    }
+    if (textUpper.includes('INDOMARET') || textUpper.includes('ALFAMART') || textUpper.includes('SUPERINDO') || textUpper.includes('MART')) {
       return 'Groceries / Convenience';
     }
-    if (m.includes('KOPI') || m.includes('CAFE') || m.includes('COFFEE') || m.includes('RESTO') || m.includes('WARUNG') ||
+    if (textUpper.includes('KOPI') || textUpper.includes('CAFE') || textUpper.includes('COFFEE') || textUpper.includes('RESTO') || textUpper.includes('WARUNG') ||
         itemNames.includes('KOPI') || itemNames.includes('NASI') || itemNames.includes('TEA') || itemNames.includes('BURGER')) {
       return 'Food & Beverage';
     }
-    if (m.includes('APOTEK') || m.includes('FARMA') || itemNames.includes('OBAT') || itemNames.includes('PARACETAMOL')) {
+    if (textUpper.includes('APOTEK') || textUpper.includes('FARMA') || itemNames.includes('OBAT') || itemNames.includes('PARACETAMOL')) {
       return 'Healthcare / Pharmacy';
     }
-    if (m.includes('SPBU') || m.includes('PERTAMINA') || itemNames.includes('PERTALITE') || itemNames.includes('PERTAMAX')) {
+    if (textUpper.includes('SPBU') || textUpper.includes('PERTAMINA') || itemNames.includes('PERTALITE') || itemNames.includes('PERTAMAX')) {
       return 'Fuel / Transport';
     }
-    if (m.includes('FASHION') || m.includes('ZARA') || m.includes('UNIQLO') || m.includes('H&M')) {
+    if (textUpper.includes('FASHION') || textUpper.includes('ZARA') || textUpper.includes('UNIQLO') || textUpper.includes('H&M')) {
       return 'Apparel & Clothing';
     }
     return 'Retail / Office Supplies';
+  }
+
+  _detectProfile(rawText = '', merchant = '', category = '') {
+    const textUpper = (rawText + ' ' + merchant + ' ' + category).toUpperCase();
+
+    if (textUpper.includes('JASAMARGA') ||
+        textUpper.includes('JASA MARGA') ||
+        textUpper.includes('GERBANG TOL') ||
+        textUpper.includes('TARIF TOL') ||
+        textUpper.includes('BEA TOL') ||
+        textUpper.includes('CITRA MARGA') ||
+        textUpper.includes('ASTRA TOL') ||
+        textUpper.includes('JMTO') ||
+        textUpper.includes('E-TOLL')) {
+      return 'toll';
+    }
+
+    if (textUpper.includes('INDOMARET') || textUpper.includes('ALFAMART') || textUpper.includes('SUPERINDO') || textUpper.includes('MINIMARKET')) {
+      return 'retail';
+    }
+
+    if (textUpper.includes('KOPI') || textUpper.includes('CAFE') || textUpper.includes('RESTO') || textUpper.includes('WARUNG') || textUpper.includes('RESTORAN')) {
+      return 'fnb';
+    }
+
+    if (textUpper.includes('APOTEK') || textUpper.includes('FARMASI') || textUpper.includes('OBAT') || textUpper.includes('PHARMACY')) {
+      return 'pharmacy';
+    }
+
+    return 'auto';
   }
 }
 

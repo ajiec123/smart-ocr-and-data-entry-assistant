@@ -43,6 +43,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
       category: 'General',
       tip: 'Adapts automatically to any receipt.'
     },
+    toll: {
+      name: 'Indonesian Tollway (Jasamarga)',
+      category: 'Transport & Toll',
+      tip: 'Optimized for Indonesian toll receipts (Jasa Marga, tariffs & E-Toll).'
+    },
     retail: {
       name: 'Retail / Minimarket',
       category: 'Groceries / Convenience',
@@ -513,6 +518,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
     elements.inputTime.value = parsed.time || '';
     elements.inputInvoice.value = parsed.invoiceNumber || '';
     elements.inputPayment.value = parsed.paymentMethod || 'CASH';
+
+    // Auto-detect profile feedback if running in auto mode
+    if (state.activeProfile === 'auto' && parsed.detectedProfile && parsed.detectedProfile !== 'auto') {
+      const detectedInfo = PROFILES[parsed.detectedProfile];
+      if (detectedInfo) {
+        showToast(`Auto-detected: ${detectedInfo.name}`);
+        elements.systemStatusMsg.textContent = `Auto-detected ${detectedInfo.name}. ${detectedInfo.tip}`;
+      }
+    }
 
     elements.inputTax.value = parsed.tax || 0;
     elements.inputService.value = parsed.serviceCharge || 0;

@@ -149,6 +149,50 @@ Debit BCA
   }
   console.log('  Parsing User Receipt: PASSED\n');
 
+  // Sample 4: Indonesian Toll Receipt (Jasamarga Auto-Detection)
+  const sampleReceiptToll = `
+PT JASAMARGA TOLLROAD OPERATOR
+RUAS TOL     : CIKARANG - CIRANJANG
+GERBANG TOL  : CIKARANG UTAMA 3
+GOLONGAN     : I
+TARIF TOL    : Rp 12.000
+TANGGAL      : 28/10/2026 19:45:00
+NO RESI      : JMR-20261028-9812
+METODE       : E-TOLL MANDIRI
+SISA SALDO   : Rp 88.000
+TERIMA KASIH
+`;
+
+  const parsedToll = parser.parse(sampleReceiptToll);
+  console.log('  Sample 4: Indonesian Toll Receipt (Jasamarga)');
+  console.log(`    Merchant : ${parsedToll.merchant}`);
+  console.log(`    Profile  : ${parsedToll.detectedProfile}`);
+  console.log(`    Category : ${parsedToll.category}`);
+  console.log(`    Payment  : ${parsedToll.paymentMethod}`);
+  console.log(`    Date     : ${parsedToll.date} ${parsedToll.time}`);
+  console.log(`    Invoice #: ${parsedToll.invoiceNumber}`);
+  console.log(`    Tarif    : Rp ${parsedToll.total.toLocaleString('id-ID')}`);
+  console.log(`    Items    : ${parsedToll.items.length} item(s)`);
+  parsedToll.items.forEach(i => console.log(`      - ${i.description} (${i.qty}x) = Rp ${i.total.toLocaleString('id-ID')}`));
+  console.log(`    Balanced : ${parsedToll.validation.isBalanced}`);
+
+  if (parsedToll.detectedProfile !== 'toll') {
+    throw new Error(`Expected detectedProfile 'toll', got '${parsedToll.detectedProfile}'`);
+  }
+  if (!parsedToll.merchant.includes('JASAMARGA')) {
+    throw new Error(`Expected Jasamarga merchant, got '${parsedToll.merchant}'`);
+  }
+  if (parsedToll.total !== 12000) {
+    throw new Error(`Expected tariff total 12000, got ${parsedToll.total}`);
+  }
+  if (parsedToll.category !== 'Transport & Toll') {
+    throw new Error(`Expected category 'Transport & Toll', got '${parsedToll.category}'`);
+  }
+  if (parsedToll.items.length !== 1) {
+    throw new Error(`Expected 1 synthesized toll item, got ${parsedToll.items.length}`);
+  }
+  console.log('  Parsing Jasamarga Toll Receipt: PASSED\n');
+
   // 3. Excel Exporter Tests
   console.log('[3/4] Testing Excel Exporter (.xlsx)...');
   const exporter = new ExcelExporter();
