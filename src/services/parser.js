@@ -89,7 +89,7 @@ class ReceiptParser {
     // Priority 1: Check for nationwide toll operators (Jasa Marga, CMNP, Hutama Karya, Astra Tol)
     for (const line of lines) {
       const upper = line.toUpperCase();
-      if (upper.includes('JASAMARGA') || upper.includes('JASA MARGA')) {
+      if (upper.includes('JASAMARGA') || upper.includes('JASA MARGA') || upper.includes('14080') || upper.includes('INDONESIA HIGHWAY')) {
         if (upper.includes('TOLLROAD OPERATOR') || upper.includes('JMTO') || upper.includes('JMTM')) {
           return 'PT JASAMARGA TOLLROAD OPERATOR';
         }
@@ -106,9 +106,26 @@ class ReceiptParser {
       }
     }
 
+    // Secondary toll check: if receipt contains E-TOLL or GOL- and toll keywords
+    const hasTollKeywords = lines.some(l => {
+      const u = l.toUpperCase();
+      return u.includes('E-TOLL') || u.includes('ETOLL') || /\bGOL\s*[-0-9IV]/i.test(u);
+    }) && lines.some(l => {
+      const u = l.toUpperCase();
+      return u.includes('TOL') || u.includes('GERBANG') || u.includes('SALDO') || u.includes('SERI');
+    });
+
+    if (hasTollKeywords) {
+      return 'PT JASA MARGA (PERSERO) TBK';
+    }
+
     // The merchant is almost always in the first 1-4 lines.
-    // Skip lines with dates, receipt headers like "SELAMAT DATANG", wifi, or phone numbers/addresses.
-    const skipKeywords = ['SELAMAT', 'DATANG', 'WELCOME', 'STRUK', 'NOTA', 'INVOICE', 'TELP', 'PHONE', 'WIFI', 'PASSWORD', 'NPWP', 'CABANG', 'JL.', 'JALAN', 'POS1', 'POS2', 'CHECK'];
+    // Skip lines with dates, receipt headers like "SELAMAT DATANG", wifi, support hotlines, or phone numbers/addresses.
+    const skipKeywords = [
+      'SELAMAT', 'DATANG', 'WELCOME', 'STRUK', 'NOTA', 'INVOICE', 'TELP', 'PHONE',
+      'WIFI', 'PASSWORD', 'NPWP', 'CABANG', 'JL.', 'JALAN', 'POS1', 'POS2', 'CHECK',
+      'INFO', 'HOTLINE', 'CALL', 'CALL CENTER', 'SERI', 'RESI', 'SALDO', 'S/N'
+    ];
     
     for (let i = 0; i < Math.min(6, lines.length); i++) {
       const line = lines[i].trim();
@@ -229,19 +246,26 @@ class ReceiptParser {
   _extractInvoiceNumber(lines) {
     const patterns = [
       /(?:CHECK|CHECK\s*NO|CHEQUE)[.\s:#-]+([A-Za-z0-9\/-]{3,35})/i,
-      /(?:NO\.?\s*RESI|RESI|NO\.?\s*TRANSAKSI|NO\.?\s*STRUK|NO\.?\s*FAKTUR|NO\.?\s*INVOICE|NO\.?\s*NOTA)[:\s]+([A-Za-z0-9\/-]{3,35})/i,
+      /(?:NO\.?\s*SERI|SERI|NO\.?\s*RESI|RESI|NO\.?\s*TRANSAKSI|NO\.?\s*STRUK|NO\.?\s*FAKTUR|NO\.?\s*INVOICE|NO\.?\s*NOTA)[:\s]+([A-Za-z0-9\/-]{3,35})/i,
       /(?:STRUK|NOTA|BON|INVOICE|INV|TRANSACTION|RECEIPT|BILL|ORDER)[.\s:#-]+([A-Za-z0-9\/-]{4,30})/i,
-      /(?:NO|NOMOR)[.\s:#-]+([A-Za-z0-9\/-]{4,30})/i,
+      /(?:NO|NOMOR)[.\s:#-]+(?:SERI\s*[:\s]*|RESI\s*[:\s]*)?([A-Za-z0-9\/-]{4,30})/i,
       /#\s*([A-Za-z0-9\/-]{4,25})/i
     ];
+
+    const labelStop = ['TRANSAKSI', 'STRUK', 'NOTA', 'SERI', 'RESI', 'INVOICE', 'CHECK', 'NOMOR', 'NO'];
 
     for (const line of lines) {
       for (const pat of patterns) {
         const match = line.match(pat);
         if (match && match[1]) {
-          const val = match[1].trim();
+          let val = match[1].trim();
+          // If val contains space (e.g. "107365 152083/150935" on Jasa Marga receipts), take primary serial number
+          const parts = val.split(/\s+/);
+          if (parts.length > 1 && /^\d+$/.test(parts[0])) {
+            val = parts[0];
+          }
           const upperVal = val.toUpperCase();
-          if (upperVal !== 'TRANSAKSI' && upperVal !== 'STRUK' && upperVal !== 'NOTA' && !/^\d{2}[-/]\d{2}/.test(val)) {
+          if (!labelStop.includes(upperVal) && !/^\d{2}[-/]\d{2}/.test(val)) {
             return val;
           }
         }
@@ -255,15 +279,47 @@ class ReceiptParser {
     let ruas = '';
     let gol = '';
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const upper = line.toUpperCase();
+
       const gateMatch = line.match(/(?:GERBANG\s*TOL|GERBANG\s*KELUAR|GERBANG\s*MASUK|GERBANG|GT)[:\s]+([A-Za-z0-9\s/-]{2,30})/i);
       if (gateMatch && !gate) gate = gateMatch[1].trim();
 
       const ruasMatch = line.match(/(?:RUAS\s*TOL|RUAS|CABANG)[:\s]+([A-Za-z0-9\s/-]{2,30})/i);
       if (ruasMatch && !ruas) ruas = ruasMatch[1].trim();
 
-      const golMatch = line.match(/(?:GOLONGAN|GOL)[:\s]+([A-Za-z0-9IV]+)/i);
+      // Support GOL-1, GOL - 1, GOL 1, GOL I, GOL: 1, GOLONGAN 1
+      const golMatch = line.match(/(?:GOLONGAN|GOL)[\s:-]*([0-9IV]+)/i);
       if (golMatch && !gol) gol = golMatch[1].trim();
+
+      // Check if line is the gate name directly above the date/time line (e.g. "CIMANGGIS3" or "CIBUBUR UTAMA")
+      if (!gate) {
+        const trimmed = line.trim();
+        const isGateCandidate = /^[A-Za-z0-9\s/-]{3,25}$/.test(trimmed) &&
+          !upper.includes('JASAMARGA') &&
+          !upper.includes('INFO') &&
+          !upper.includes('HIGHWAY') &&
+          !upper.includes('STRUK') &&
+          !upper.includes('NOTA') &&
+          !upper.includes('SERI') &&
+          !upper.includes('GOL') &&
+          !upper.includes('SALDO') &&
+          !upper.includes('TERIMA') &&
+          !/\d{2}[-/.]\d{2}[-/.]\d{2,4}/.test(trimmed);
+
+        if (isGateCandidate && i + 1 < lines.length) {
+          const nextLine = lines[i + 1].trim();
+          if (/\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(nextLine) || /\d{1,2}:\d{2}/.test(nextLine)) {
+            gate = trimmed;
+          }
+        }
+      }
+    }
+
+    // Format gate nicely if concatenated (e.g. "CIMANGGIS3" -> "CIMANGGIS 3")
+    if (gate && /^[A-Za-z]+[0-9]+$/.test(gate)) {
+      gate = gate.replace(/([A-Za-z]+)([0-9]+)/, '$1 $2');
     }
 
     return { gate, ruas, gol };
@@ -287,9 +343,19 @@ class ReceiptParser {
 
   _extractPaymentMethod(lines) {
     const upperText = lines.join(' ').toUpperCase();
-    if (upperText.includes('E-TOLL') || upperText.includes('ETOLL')) return 'E-Toll';
-    if (upperText.includes('E-MONEY') || upperText.includes('EMONEY')) return 'E-Money Mandiri';
+
+    // Dedicated Indonesian Toll card detection (E-Toll, Flazz, e-Money, Brizzi, TapCash)
+    if (upperText.includes('E-TOLL') || upperText.includes('ETOLL') || upperText.includes('E - TOLL')) {
+      if (upperText.includes('BCA') || upperText.includes('FLAZZ')) return 'E-Toll BCA (Flazz)';
+      if (upperText.includes('MANDIRI') || upperText.includes('E-MONEY') || upperText.includes('EMONEY')) return 'E-Toll Mandiri (e-Money)';
+      if (upperText.includes('BRI') || upperText.includes('BRIZZI')) return 'E-Toll BRI (Brizzi)';
+      if (upperText.includes('BNI') || upperText.includes('TAPCASH')) return 'E-Toll BNI (TapCash)';
+      if (upperText.includes('DKI') || upperText.includes('JAKCARD')) return 'E-Toll JakCard';
+      return 'E-Toll';
+    }
+
     if (upperText.includes('FLAZZ')) return 'Flazz BCA';
+    if (upperText.includes('E-MONEY') || upperText.includes('EMONEY')) return 'E-Money Mandiri';
     if (upperText.includes('BRIZZI')) return 'Brizzi BRI';
     if (upperText.includes('TAPCASH')) return 'TapCash BNI';
     if (upperText.includes('LET IT FLO') || upperText.includes('FLO')) return 'Let It Flo';
@@ -301,6 +367,16 @@ class ReceiptParser {
     if (upperText.includes('SHOPEEPAY') || upperText.includes('SHOPEE PAY')) return 'ShopeePay';
     if (upperText.includes('OVO')) return 'OVO';
     if (upperText.includes('TUNAI') || upperText.includes('CASH')) return 'TUNAI (Cash)';
+
+    // If toll receipt is detected, payment is electronically processed (never cash)
+    const isToll = upperText.includes('JASAMARGA') ||
+      upperText.includes('INFO TOL') ||
+      upperText.includes('14080') ||
+      upperText.includes('GERBANG') ||
+      /\bGOL\s*[-0-9IV]/i.test(upperText);
+
+    if (isToll) return 'E-Toll';
+
     return 'CASH';
   }
 
@@ -354,9 +430,19 @@ class ReceiptParser {
         continue;
       }
 
-      // Check for Indonesian toll tariffs (TARIF TOL, BEA TOL, TARIF)
-      if (/^(?:TARIF\s*TOL|BEA\s*TOL|BIAYA\s*TOL|TARIF\s*GOL|TARIF)\b/i.test(upper) ||
-          /(?:TARIF\s*TOL|BEA\s*TOL)[:\s]+(?:RP\.?\s*)?(\d{1,3}(?:[.,]\d{3})*|\d+)/i.test(upper)) {
+      // Skip hotlines, serial numbers, invoice headers, card numbers
+      if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE') || upper.includes('SERI') || upper.includes('S/N') || upper.includes('SN:')) {
+        continue;
+      }
+
+      // Check for Indonesian toll tariffs (TARIF TOL, BEA TOL, TARIF, or GOL-1 E-TOLL BCA Rp 7.000)
+      const isTollTariffLine = (
+        /^(?:TARIF\s*TOL|BEA\s*TOL|BIAYA\s*TOL|TARIF\s*GOL|TARIF)\b/i.test(upper) ||
+        /(?:TARIF\s*TOL|BEA\s*TOL)[:\s]+(?:RP\.?\s*)?(\d{1,3}(?:[.,]\d{3})*|\d+)/i.test(upper) ||
+        (/\bGOL\s*[-0-9IV]/i.test(upper) && (upper.includes('RP') || /\d{1,3}[.,]\d{3}/.test(line)))
+      );
+
+      if (isTollTariffLine) {
         const amt = findAmountInLine(line);
         if (amt > 0) {
           result.total = amt;
@@ -553,17 +639,30 @@ class ReceiptParser {
       const toll = this._extractTollDetails(lines);
       const isToll = lines.some(l => {
         const u = l.toUpperCase();
-        return u.includes('JASAMARGA') || u.includes('JASA MARGA') || u.includes('GERBANG') || u.includes('TARIF TOL') || u.includes('BEA TOL') || u.includes('RUAS');
+        return u.includes('JASAMARGA') ||
+          u.includes('JASA MARGA') ||
+          u.includes('INFO TOL') ||
+          u.includes('14080') ||
+          u.includes('GERBANG') ||
+          u.includes('TARIF TOL') ||
+          u.includes('BEA TOL') ||
+          u.includes('RUAS') ||
+          u.includes('E-TOLL') ||
+          u.includes('ETOLL') ||
+          /\bGOL\s*[-0-9IV]/i.test(u);
       });
 
       if (isToll) {
         let descParts = ['Tarif Tol'];
-        if (toll.ruas) descParts.push(toll.ruas);
-        if (toll.gate) descParts.push(`(${toll.gate})`);
-        if (toll.gol) descParts.push(`Gol ${toll.gol}`);
+        if (toll.gate) {
+          descParts.push(toll.gate);
+        } else if (toll.ruas) {
+          descParts.push(toll.ruas);
+        }
+        if (toll.gol) descParts.push(`(Golongan ${toll.gol})`);
 
         items.push({
-          description: descParts.join(' '),
+          description: descParts.join(' ').trim(),
           qty: 1,
           unitPrice: totals.total,
           total: totals.total
@@ -581,7 +680,12 @@ class ReceiptParser {
       upper.includes('STRUK') || upper.includes('INVOICE') || upper.includes('KASIR') ||
       upper.includes('TANGGAL') || upper.includes('DATE') || upper.includes('WAKTU') ||
       upper.includes('NPWP') || upper.includes('KODE') || upper.includes('ITEM') ||
-      upper.includes('HARGA') || upper.includes('DESKRIPSI') || upper.includes('QTY')
+      upper.includes('HARGA') || upper.includes('DESKRIPSI') || upper.includes('QTY') ||
+      upper.includes('INFO TOL') || upper.includes('INFO') || upper.includes('HOTLINE') ||
+      upper.includes('14080') || upper.includes('CALL CENTER') || upper.includes('SERI') ||
+      upper.includes('RESI') || upper.includes('SALDO') || upper.includes('S/N') ||
+      upper.includes('SN:') || upper.includes('GOL-') || upper.includes('GOLONGAN') ||
+      upper.includes('E-TOLL') || upper.includes('ETOLL') || upper.includes('HIGHWAY')
     );
   }
 
@@ -598,7 +702,16 @@ class ReceiptParser {
     const textUpper = (rawText + ' ' + (merchant || '')).toUpperCase();
     const itemNames = items.map(i => i.description.toUpperCase()).join(' ');
 
-    if (textUpper.includes('JASAMARGA') || textUpper.includes('JASA MARGA') || textUpper.includes('GERBANG TOL') || textUpper.includes('TARIF TOL') || textUpper.includes('E-TOLL')) {
+    if (textUpper.includes('JASAMARGA') ||
+        textUpper.includes('JASA MARGA') ||
+        textUpper.includes('INFO TOL') ||
+        textUpper.includes('14080') ||
+        textUpper.includes('GERBANG TOL') ||
+        textUpper.includes('TARIF TOL') ||
+        textUpper.includes('BEA TOL') ||
+        textUpper.includes('E-TOLL') ||
+        textUpper.includes('ETOLL') ||
+        /\bGOL\s*[-0-9IV]/i.test(textUpper)) {
       return 'Transport & Toll';
     }
     if (textUpper.includes('INDOMARET') || textUpper.includes('ALFAMART') || textUpper.includes('SUPERINDO') || textUpper.includes('MART')) {
@@ -625,13 +738,17 @@ class ReceiptParser {
 
     if (textUpper.includes('JASAMARGA') ||
         textUpper.includes('JASA MARGA') ||
+        textUpper.includes('INFO TOL') ||
+        textUpper.includes('14080') ||
         textUpper.includes('GERBANG TOL') ||
         textUpper.includes('TARIF TOL') ||
         textUpper.includes('BEA TOL') ||
         textUpper.includes('CITRA MARGA') ||
         textUpper.includes('ASTRA TOL') ||
         textUpper.includes('JMTO') ||
-        textUpper.includes('E-TOLL')) {
+        textUpper.includes('E-TOLL') ||
+        textUpper.includes('ETOLL') ||
+        /\bGOL\s*[-0-9IV]/i.test(textUpper)) {
       return 'toll';
     }
 

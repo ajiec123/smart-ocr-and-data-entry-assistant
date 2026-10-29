@@ -193,6 +193,59 @@ TERIMA KASIH
   }
   console.log('  Parsing Jasamarga Toll Receipt: PASSED\n');
 
+  // Sample 5: Real-World Indonesian Toll Receipt from User Screenshot (Cimanggis 3)
+  const sampleReceiptCimanggis = `
+Info Tol 14080
+CIMANGGIS3
+31/12/2022 17:57:15 02/08/02
+No Seri : 107365 152083/150935
+GOL-1 E-TOLL BCA Rp 7.000
+S/N: 0146000631250962
+SALDO: Rp. 16.340
+`;
+
+  const parsedCimanggis = parser.parse(sampleReceiptCimanggis);
+  console.log('  Sample 5: Real-world Toll Receipt (Cimanggis 3 / User Screenshot)');
+  console.log(`    Merchant : ${parsedCimanggis.merchant}`);
+  console.log(`    Profile  : ${parsedCimanggis.detectedProfile}`);
+  console.log(`    Category : ${parsedCimanggis.category}`);
+  console.log(`    Date     : ${parsedCimanggis.date} ${parsedCimanggis.time}`);
+  console.log(`    Invoice #: ${parsedCimanggis.invoiceNumber}`);
+  console.log(`    Payment  : ${parsedCimanggis.paymentMethod}`);
+  console.log(`    Total    : Rp ${parsedCimanggis.total.toLocaleString('id-ID')}`);
+  console.log(`    Items    : ${parsedCimanggis.items.length} item(s)`);
+  parsedCimanggis.items.forEach(i => console.log(`      - ${i.description} (${i.qty}x) = Rp ${i.total.toLocaleString('id-ID')}`));
+  console.log(`    Balanced : ${parsedCimanggis.validation.isBalanced}`);
+
+  if (parsedCimanggis.merchant !== 'PT JASA MARGA (PERSERO) TBK') {
+    throw new Error(`Expected merchant 'PT JASA MARGA (PERSERO) TBK', got '${parsedCimanggis.merchant}'`);
+  }
+  if (parsedCimanggis.detectedProfile !== 'toll') {
+    throw new Error(`Expected detectedProfile 'toll', got '${parsedCimanggis.detectedProfile}'`);
+  }
+  if (parsedCimanggis.category !== 'Transport & Toll') {
+    throw new Error(`Expected category 'Transport & Toll', got '${parsedCimanggis.category}'`);
+  }
+  if (parsedCimanggis.date !== '2022-12-31' || parsedCimanggis.time !== '17:57:15') {
+    throw new Error(`Expected date 2022-12-31 17:57:15, got ${parsedCimanggis.date} ${parsedCimanggis.time}`);
+  }
+  if (parsedCimanggis.invoiceNumber !== '107365') {
+    throw new Error(`Expected invoiceNumber '107365', got '${parsedCimanggis.invoiceNumber}'`);
+  }
+  if (!parsedCimanggis.paymentMethod.includes('E-Toll')) {
+    throw new Error(`Expected payment method to include 'E-Toll', got '${parsedCimanggis.paymentMethod}'`);
+  }
+  if (parsedCimanggis.total !== 7000) {
+    throw new Error(`Expected total 7000, got ${parsedCimanggis.total}`);
+  }
+  if (parsedCimanggis.items.length !== 1) {
+    throw new Error(`Expected 1 item, got ${parsedCimanggis.items.length}`);
+  }
+  if (!parsedCimanggis.items[0].description.includes('CIMANGGIS')) {
+    throw new Error(`Expected item to include 'CIMANGGIS', got '${parsedCimanggis.items[0].description}'`);
+  }
+  console.log('  Parsing Cimanggis Toll Receipt: PASSED\n');
+
   // 3. Excel Exporter Tests
   console.log('[3/4] Testing Excel Exporter (.xlsx)...');
   const exporter = new ExcelExporter();
