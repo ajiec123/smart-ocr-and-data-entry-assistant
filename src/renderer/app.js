@@ -79,6 +79,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
     queueList: document.getElementById('queueList'),
     btnProcessAllQueue: document.getElementById('btnProcessAllQueue'),
     btnExportBatchMaster: document.getElementById('btnExportBatchMaster'),
+    btnQueueTrash: document.getElementById('btnQueueTrash'),
+    queueTrashMenu: document.getElementById('queueTrashMenu'),
+    btnDeleteSelectedQueue: document.getElementById('btnDeleteSelectedQueue'),
+    btnDeleteAllQueue: document.getElementById('btnDeleteAllQueue'),
 
     // Viewer Controls & Canvas
     presetSelect: document.getElementById('presetSelect'),
@@ -993,13 +997,26 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
       card.innerHTML = `
         <div class="queue-item-row-top">
           <span class="queue-item-title" title="${escapeHtml(merchantText)}">${escapeHtml(merchantText)}</span>
-          <span class="queue-item-status-dot ${item.status}" title="Status: ${item.status}"></span>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span class="queue-item-status-dot ${item.status}" title="Status: ${item.status}"></span>
+            <button class="btn-queue-delete-item" data-index="${idx}" title="Delete this receipt from queue">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
         <div class="queue-item-row-bottom">
           <span>${item.parsed?.items?.length ? item.parsed.items.length + ' items' : (item.isPdf ? 'PDF' : 'Image')}</span>
           <span style="font-family: var(--font-mono); font-weight: 600;">${totalText}</span>
         </div>
       `;
+
+      const delBtn = card.querySelector('.btn-queue-delete-item');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteQueueItem(idx);
+        });
+      }
 
       card.addEventListener('click', () => {
         if (state.activeQueueIndex !== idx) {
@@ -1010,6 +1027,48 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
 
       elements.queueList.appendChild(card);
     });
+  }
+
+  function deleteQueueItem(index) {
+    if (index < 0 || index >= state.queue.length) return;
+    const removed = state.queue[index];
+    const isDeletingActive = (state.activeQueueIndex === index);
+
+    state.queue.splice(index, 1);
+
+    if (state.queue.length === 0) {
+      clearAllFormData();
+      renderQueueList();
+      showToast(`Removed ${removed.filename} from queue`);
+      return;
+    }
+
+    if (isDeletingActive) {
+      const nextIndex = Math.min(index, state.queue.length - 1);
+      selectQueueItem(nextIndex);
+    } else if (state.activeQueueIndex > index) {
+      state.activeQueueIndex--;
+      renderQueueList();
+    } else {
+      renderQueueList();
+    }
+
+    showToast(`Removed ${removed.filename}`);
+  }
+
+  function deleteAllQueue() {
+    if (state.queue.length === 0) {
+      showToast('Queue is already empty');
+      return;
+    }
+
+    if (confirm(`Are you sure you want to delete all ${state.queue.length} documents from the queue?`)) {
+      const count = state.queue.length;
+      state.queue = [];
+      clearAllFormData();
+      renderQueueList();
+      showToast(`Cleared all ${count} documents from queue`);
+    }
   }
 
   async function selectQueueItem(index) {
@@ -1181,6 +1240,43 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
     if (elements.btnExportBatchMaster) {
       elements.btnExportBatchMaster.addEventListener('click', exportBatchMasterExcel);
     }
+
+    // Queue Trash Actions (Clear Selected or Clear All)
+    if (elements.btnQueueTrash) {
+      elements.btnQueueTrash.addEventListener('click', (e) => {
+        e.stopPropagation();
+        elements.queueTrashMenu.classList.toggle('hidden');
+      });
+    }
+
+    if (elements.btnDeleteSelectedQueue) {
+      elements.btnDeleteSelectedQueue.addEventListener('click', (e) => {
+        e.stopPropagation();
+        elements.queueTrashMenu.classList.add('hidden');
+        if (state.activeQueueIndex >= 0 && state.queue[state.activeQueueIndex]) {
+          deleteQueueItem(state.activeQueueIndex);
+        } else {
+          showToast('No queue document selected');
+        }
+      });
+    }
+
+    if (elements.btnDeleteAllQueue) {
+      elements.btnDeleteAllQueue.addEventListener('click', (e) => {
+        e.stopPropagation();
+        elements.queueTrashMenu.classList.add('hidden');
+        deleteAllQueue();
+      });
+    }
+
+    // Close trash menu popover when clicking anywhere outside
+    document.addEventListener('click', (e) => {
+      if (elements.queueTrashMenu && !elements.queueTrashMenu.classList.contains('hidden')) {
+        if (!e.target.closest('#btnQueueTrash') && !e.target.closest('#queueTrashMenu')) {
+          elements.queueTrashMenu.classList.add('hidden');
+        }
+      }
+    });
 
     // Toggle OCR Bounding Boxes
     if (elements.btnToggleBBox) {
