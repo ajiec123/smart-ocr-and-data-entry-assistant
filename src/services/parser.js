@@ -20,20 +20,32 @@ class ReceiptParser {
       .filter(line => line.length > 0);
 
     const merchant = this._extractMerchant(lines);
+    const isToll = this._isTollReceipt(lines, rawText, merchant);
     const dateInfo = this._extractDate(lines);
     const invoiceNo = this._extractInvoiceNumber(lines);
     const cashier = this._extractCashier(lines);
     const paymentMethod = this._extractPaymentMethod(lines);
     
-    // Financial numbers
-    const totals = this._extractFinancials(lines);
+    let totals;
+    let items;
+    let category;
+    let detectedProfile;
 
-    // Line items table
-    const items = this._extractLineItems(lines, totals);
-
-    // Category & Profile detection
-    const category = this._guessCategory(merchant, items, rawText);
-    const detectedProfile = this._detectProfile(rawText, merchant, category);
+    if (isToll) {
+      detectedProfile = 'toll';
+      category = 'Transport & Toll';
+      const tollRes = this._extractTollFinancialsAndItems(lines, rawText);
+      totals = tollRes.totals;
+      items = tollRes.items;
+    } else {
+      // General & Retail Financial extraction
+      totals = this._extractFinancials(lines);
+      // Line items table
+      items = this._extractLineItems(lines, totals);
+      // Category & Profile detection
+      category = this._guessCategory(merchant, items, rawText);
+      detectedProfile = this._detectProfile(rawText, merchant, category);
+    }
 
     // If items were found, recalculate verification check
     const itemsSum = items.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -323,6 +335,134 @@ class ReceiptParser {
     }
 
     return { gate, ruas, gol };
+  }
+
+  _isTollReceipt(lines, rawText, merchant = '') {
+    const textUpper = (rawText + ' ' + (merchant || '')).toUpperCase();
+    return (
+      textUpper.includes('JASAMARGA') ||
+      textUpper.includes('JASA MARGA') ||
+      textUpper.includes('INFO TOL') ||
+      textUpper.includes('14080') ||
+      textUpper.includes('INDONESIA HIGHWAY') ||
+      textUpper.includes('GERBANG TOL') ||
+      textUpper.includes('TARIF TOL') ||
+      textUpper.includes('BEA TOL') ||
+      textUpper.includes('CITRA MARGA') ||
+      textUpper.includes('ASTRA TOL') ||
+      textUpper.includes('JMTO') ||
+      textUpper.includes('JMTM') ||
+      textUpper.includes('E-TOLL') ||
+      textUpper.includes('ETOLL') ||
+      /\bGOL\s*[-0-9IV]/i.test(textUpper)
+    );
+  }
+
+  _extractTollFinancialsAndItems(lines, rawText) {
+    const toll = this._extractTollDetails(lines);
+    let tariff = 0;
+
+    // Helper to extract amount from a line or token
+    const extractAmount = (str, requireCurrency = false) => {
+      // Skip fractions, lane/shift counters (e.g. 152083/150935 or 02/08/02)
+      if (str.includes('/')) return 0;
+
+      if (requireCurrency) {
+        const match = str.match(/(?:Rp\.?\s+)(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?|\d{4,6})\b/i);
+        return match ? this._cleanAmount(match[1]) : 0;
+      }
+
+      const match = str.match(/(?:Rp\.?\s*)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?|\d{4,6})\b/i);
+      return match ? this._cleanAmount(match[1]) : 0;
+    };
+
+    // Priority 1: Check lines explicitly labeled with TARIF, BEA TOL, or GOL
+    for (const line of lines) {
+      const upper = line.toUpperCase();
+      if (upper.includes('SALDO')) continue; // Skip card balance
+      if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+      if (upper.includes('SERI') || upper.includes('RESI')) continue;
+      if (upper.includes('S/N') || upper.includes('SN:')) continue;
+
+      if (/^(?:TARIF\s*TOL|BEA\s*TOL|BIAYA\s*TOL|TARIF\s*GOL|TARIF)\b/i.test(upper) ||
+          /(?:TARIF\s*TOL|BEA\s*TOL)[:\s]+(?:RP\.?\s*)?(\d{1,3}(?:[.,]\d{3})*|\d+)/i.test(upper) ||
+          /\bGOL\s*[-0-9IV]/i.test(upper)) {
+        const amt = extractAmount(line);
+        if (amt >= 1000 && amt <= 500000) {
+          tariff = amt;
+          break;
+        }
+      }
+    }
+
+    // Priority 2: Check any line with explicit "Rp" prefix (e.g. "Rp 7.000")
+    if (tariff === 0) {
+      for (const line of lines) {
+        const upper = line.toUpperCase();
+        if (upper.includes('SALDO')) continue;
+        if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+        if (upper.includes('SERI') || upper.includes('RESI')) continue;
+        if (upper.includes('S/N') || upper.includes('SN:')) continue;
+        if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(line)) continue; // Date line
+        if (/^\d{1,2}:\d{2}/.test(line)) continue; // Time line
+
+        const amt = extractAmount(line, true);
+        if (amt >= 1000 && amt <= 500000) {
+          tariff = amt;
+          break;
+        }
+      }
+    }
+
+    // Priority 3: Scan standalone currency numbers without "/" that fit standard toll fare range
+    if (tariff === 0) {
+      for (const line of lines) {
+        const upper = line.toUpperCase();
+        if (upper.includes('SALDO')) continue;
+        if (upper.includes('INFO') || upper.includes('14080') || upper.includes('HOTLINE')) continue;
+        if (upper.includes('SERI') || upper.includes('RESI')) continue;
+        if (upper.includes('S/N') || upper.includes('SN:')) continue;
+        if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(line)) continue;
+        if (/^\d{1,2}:\d{2}/.test(line)) continue;
+
+        const amt = extractAmount(line, false);
+        if (amt >= 1000 && amt <= 250000) {
+          tariff = amt;
+          break;
+        }
+      }
+    }
+
+    // Build descriptive line item for toll transaction
+    let descParts = ['Tarif Tol'];
+    if (toll.gate) {
+      descParts.push(toll.gate);
+    } else if (toll.ruas) {
+      descParts.push(toll.ruas);
+    }
+    if (toll.gol) {
+      descParts.push(`(Golongan ${toll.gol})`);
+    }
+
+    const items = [];
+    if (tariff > 0) {
+      items.push({
+        description: descParts.join(' ').trim(),
+        qty: 1,
+        unitPrice: tariff,
+        total: tariff
+      });
+    }
+
+    const totals = {
+      subtotal: tariff,
+      tax: 0,
+      service: 0,
+      discount: 0,
+      total: tariff
+    };
+
+    return { totals, items };
   }
 
   _extractCashier(lines) {

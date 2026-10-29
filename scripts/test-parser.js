@@ -244,7 +244,37 @@ SALDO: Rp. 16.340
   if (!parsedCimanggis.items[0].description.includes('CIMANGGIS')) {
     throw new Error(`Expected item to include 'CIMANGGIS', got '${parsedCimanggis.items[0].description}'`);
   }
-  console.log('  Parsing Cimanggis Toll Receipt: PASSED\n');
+  console.log('  Parsing Cimanggis Toll Receipt (Single Line): PASSED\n');
+
+  // Sample 6: Multi-column Split OCR Output (Tesseract column-break variation)
+  const sampleReceiptSplitColumns = `
+Info Tol 14080
+CIMANGGIS3
+31/12/2022 17:57:15
+No Seri : 107365
+GOL-1 E-TOLL BCA
+S/N: 0146000631250962
+SALDO: Rp. 16.340
+02/08/02
+152083/150935
+Rp 7.000
+`;
+
+  const parsedSplit = parser.parse(sampleReceiptSplitColumns);
+  console.log('  Sample 6: Multi-column Split OCR Output');
+  console.log(`    Merchant : ${parsedSplit.merchant}`);
+  console.log(`    Total    : Rp ${parsedSplit.total.toLocaleString('id-ID')}`);
+  console.log(`    Items    : ${parsedSplit.items.length} item(s)`);
+  parsedSplit.items.forEach(i => console.log(`      - ${i.description} (${i.qty}x) = Rp ${i.total.toLocaleString('id-ID')}`));
+  console.log(`    Balanced : ${parsedSplit.validation.isBalanced}`);
+
+  if (parsedSplit.total !== 7000) {
+    throw new Error(`Expected tariff total 7000 from split column output, got ${parsedSplit.total}`);
+  }
+  if (parsedSplit.items.length !== 1 || parsedSplit.items[0].total !== 7000) {
+    throw new Error(`Expected 1 item with total 7000, got ${JSON.stringify(parsedSplit.items)}`);
+  }
+  console.log('  Parsing Multi-column Split Toll Receipt: PASSED\n');
 
   // 3. Excel Exporter Tests
   console.log('[3/4] Testing Excel Exporter (.xlsx)...');
