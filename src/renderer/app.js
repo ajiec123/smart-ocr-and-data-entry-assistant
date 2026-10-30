@@ -43,6 +43,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
       category: 'General',
       tip: 'Adapts automatically to any receipt.'
     },
+    banking: {
+      name: 'Mobile Banking & Transfer',
+      category: 'Financial & Transfer',
+      tip: 'Optimized for bank transfer receipts (m-BCA, Livin, BRImo, BI-FAST, e-Wallets).'
+    },
     toll: {
       name: 'Indonesian Tollway (Jasamarga)',
       category: 'Transport & Toll',
@@ -226,9 +231,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
 
     // Update section title based on active profile
     if (elements.tableSectionTitle) {
-      elements.tableSectionTitle.textContent = (newProfileKey === 'toll') 
-        ? 'Toll Transaction & Tariff Breakdown' 
-        : 'Line Items & Products';
+      if (newProfileKey === 'toll') {
+        elements.tableSectionTitle.textContent = 'Toll Transaction & Tariff Breakdown';
+      } else if (newProfileKey === 'banking') {
+        elements.tableSectionTitle.textContent = 'Transfer & Payment Breakdown';
+      } else {
+        elements.tableSectionTitle.textContent = 'Line Items & Products';
+      }
     }
 
     // 2. If a document is ALREADY loaded in the viewer, update active context without altering canvas image
@@ -256,7 +265,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
         if (!sampleFile) return;
 
         // Auto-select matching profile in the dropdown
-        if (sampleFile.includes('indomaret')) {
+        if (sampleFile.includes('banking')) {
+          elements.profileSelect.value = 'banking';
+          state.activeProfile = 'banking';
+        } else if (sampleFile.includes('indomaret')) {
           elements.profileSelect.value = 'retail';
           state.activeProfile = 'retail';
         } else if (sampleFile.includes('kopi')) {
@@ -536,12 +548,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
       }
     }
 
-    // Dynamic section title for Toll vs Retail
+    // Dynamic section title for Toll vs Banking vs Retail
     const isTollActive = (parsed.detectedProfile === 'toll' || state.activeProfile === 'toll');
+    const isBankingActive = (parsed.detectedProfile === 'banking' || state.activeProfile === 'banking');
     if (elements.tableSectionTitle) {
-      elements.tableSectionTitle.textContent = isTollActive 
-        ? 'Toll Transaction & Tariff Breakdown' 
-        : 'Line Items & Products';
+      if (isTollActive) {
+        elements.tableSectionTitle.textContent = 'Toll Transaction & Tariff Breakdown';
+      } else if (isBankingActive) {
+        elements.tableSectionTitle.textContent = 'Transfer & Payment Breakdown';
+      } else {
+        elements.tableSectionTitle.textContent = 'Line Items & Products';
+      }
     }
 
     elements.inputTax.value = parsed.tax || 0;
@@ -564,12 +581,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
   function renderLineItemsTable() {
     elements.itemsTableBody.innerHTML = '';
     const isTollActive = (state.activeProfile === 'toll' || elements.inputCategory.value === 'Transport & Toll');
+    const isBankingActive = (state.activeProfile === 'banking' || elements.inputCategory.value === 'Financial & Transfer');
 
     if (state.items.length === 0) {
       const tr = document.createElement('tr');
-      const emptyMsg = isTollActive
-        ? 'No toll tariff extracted. Click "+ Add Line Item" to enter tariff manually.'
-        : 'No line items extracted. Click "+ Add Line Item" to enter manually.';
+      let emptyMsg = 'No line items extracted. Click "+ Add Line Item" to enter manually.';
+      if (isTollActive) {
+        emptyMsg = 'No toll tariff extracted. Click "+ Add Line Item" to enter tariff manually.';
+      } else if (isBankingActive) {
+        emptyMsg = 'No transfer details extracted. Click "+ Add Line Item" to enter transfer manually.';
+      }
       tr.innerHTML = `<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 16px;">${emptyMsg}</td>`;
       elements.itemsTableBody.appendChild(tr);
       return;
@@ -577,7 +598,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.mjs';
 
     state.items.forEach((item, index) => {
       const tr = document.createElement('tr');
-      const placeholderText = isTollActive ? 'Toll tariff details (e.g. Gerbang / Golongan)...' : 'Product name...';
+      let placeholderText = 'Product name...';
+      if (isTollActive) {
+        placeholderText = 'Toll tariff details (e.g. Gerbang / Golongan)...';
+      } else if (isBankingActive) {
+        placeholderText = 'Transfer description (e.g. Transfer ke BCA / Nama Penerima)...';
+      }
       tr.innerHTML = `
         <td style="text-align: center; color: var(--text-muted); font-size: 11px;">${index + 1}</td>
         <td>

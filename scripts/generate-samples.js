@@ -174,6 +174,63 @@ const samples = [
         <text x="300" y="600" class="mono center">SEMOGA LEKAS SEMBUH</text>
       </svg>
     `
+  },
+  {
+    name: 'sample_banking.png',
+    title: 'm-BCA Mobile Banking Transfer',
+    svg: `
+      <svg width="600" height="780" viewBox="0 0 600 780" xmlns="http://www.w3.org/2000/svg">
+        <rect width="600" height="780" fill="#f8fafc"/>
+        <rect x="20" y="20" width="560" height="740" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+        <style>
+          .mono { font-family: monospace; font-size: 16px; fill: #1e293b; }
+          .bold { font-weight: bold; }
+          .center { text-anchor: middle; }
+          .right { text-anchor: end; }
+          .primary { fill: #0060af; }
+          .success { fill: #16a34a; }
+        </style>
+        <text x="300" y="65" class="mono bold center primary" font-size="24">m-Transfer BCA</text>
+        <text x="300" y="95" class="mono bold center success" font-size="18">TRANSFER BERHASIL</text>
+        <text x="300" y="125" class="mono center" font-size="14">28/10/2026 14:35:10</text>
+        <line x1="50" y1="145" x2="550" y2="145" stroke="#e2e8f0" stroke-width="2"/>
+
+        <text x="50" y="180" class="mono">No. Referensi:</text>
+        <text x="550" y="180" class="mono bold right">20261028143588921</text>
+
+        <text x="50" y="220" class="mono">Sumber Dana:</text>
+        <text x="550" y="220" class="mono right">1234567890 - BUDI SANTOSO</text>
+
+        <text x="50" y="260" class="mono">Nama Penerima:</text>
+        <text x="550" y="260" class="mono bold right">PT SINAR MAKMUR ABADI</text>
+
+        <text x="50" y="300" class="mono">Bank Tujuan:</text>
+        <text x="550" y="300" class="mono right">BANK MANDIRI</text>
+
+        <text x="50" y="340" class="mono">Metode Transfer:</text>
+        <text x="550" y="340" class="mono bold right">BI-FAST</text>
+
+        <text x="50" y="380" class="mono">Berita / Catatan:</text>
+        <text x="550" y="380" class="mono right">Pelunasan Invoice INV-8902</text>
+
+        <line x1="50" y1="410" x2="550" y2="410" stroke="#0060af" stroke-width="2"/>
+
+        <text x="50" y="450" class="mono">Nominal Transfer:</text>
+        <text x="550" y="450" class="mono bold right">Rp 2.500.000,00</text>
+
+        <text x="50" y="490" class="mono">Biaya Admin:</text>
+        <text x="550" y="490" class="mono right">Rp 2.500,00</text>
+
+        <line x1="50" y1="520" x2="550" y2="520" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="6,4"/>
+
+        <text x="50" y="565" class="mono bold primary" font-size="20">TOTAL TRANSAKSI:</text>
+        <text x="550" y="565" class="mono bold primary right" font-size="20">Rp 2.502.500,00</text>
+
+        <line x1="50" y1="600" x2="550" y2="600" stroke="#e2e8f0" stroke-width="2"/>
+        <text x="300" y="640" class="mono center" font-size="13" fill="#64748b">Simpan bukti transaksi ini sebagai bukti pembayaran yang sah.</text>
+        <text x="300" y="665" class="mono center" font-size="13" fill="#64748b">Halo BCA 1500888 | www.bca.co.id</text>
+      </svg>
+    `
   }
 ];
 

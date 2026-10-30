@@ -276,6 +276,102 @@ Rp 7.000
   }
   console.log('  Parsing Multi-column Split Toll Receipt: PASSED\n');
 
+  // Sample 7: Mobile Banking Transfer Receipt (m-BCA)
+  const sampleReceiptBcaBanking = `
+m-Transfer:
+BERHASIL
+28/10/2026 14:35:10
+NO. REFERENSI: 20261028143588921
+DARI: 1234567890 - BUDI SANTOSO
+KE: 0987654321 - PT SINAR MAKMUR ABADI
+BANK TUJUAN: BCA
+JUMLAH: Rp 1.500.000,00
+BIAYA ADMIN: Rp 0,00
+TOTAL: Rp 1.500.000,00
+BERITA: PEMBAYARAN SEWA
+JENIS TRANSFER: TRANSFER ONLINE
+`;
+
+  const parsedBanking1 = parser.parse(sampleReceiptBcaBanking);
+  console.log('  Sample 7: Mobile Banking Transfer Receipt (m-BCA)');
+  console.log(`    Merchant : ${parsedBanking1.merchant}`);
+  console.log(`    Profile  : ${parsedBanking1.detectedProfile}`);
+  console.log(`    Category : ${parsedBanking1.category}`);
+  console.log(`    Date     : ${parsedBanking1.date} ${parsedBanking1.time}`);
+  console.log(`    Invoice #: ${parsedBanking1.invoiceNumber}`);
+  console.log(`    Payment  : ${parsedBanking1.paymentMethod}`);
+  console.log(`    Total    : Rp ${parsedBanking1.total.toLocaleString('id-ID')}`);
+  console.log(`    Items    : ${parsedBanking1.items.length} item(s)`);
+  parsedBanking1.items.forEach(i => console.log(`      - ${i.description} (${i.qty}x) = Rp ${i.total.toLocaleString('id-ID')}`));
+  console.log(`    Balanced : ${parsedBanking1.validation.isBalanced}`);
+
+  if (parsedBanking1.detectedProfile !== 'banking') {
+    throw new Error(`Expected detectedProfile 'banking', got '${parsedBanking1.detectedProfile}'`);
+  }
+  if (!parsedBanking1.merchant.includes('BCA')) {
+    throw new Error(`Expected BCA merchant, got '${parsedBanking1.merchant}'`);
+  }
+  if (parsedBanking1.total !== 1500000) {
+    throw new Error(`Expected total 1500000, got ${parsedBanking1.total}`);
+  }
+  if (parsedBanking1.invoiceNumber !== '20261028143588921') {
+    throw new Error(`Expected reference 20261028143588921, got ${parsedBanking1.invoiceNumber}`);
+  }
+  if (parsedBanking1.items.length !== 1) {
+    throw new Error(`Expected 1 item, got ${parsedBanking1.items.length}`);
+  }
+  if (!parsedBanking1.validation.isBalanced) {
+    throw new Error('Expected math balance to be true');
+  }
+  console.log('  Parsing m-BCA Mobile Banking Receipt: PASSED\n');
+
+  // Sample 8: Mobile Banking Transfer Receipt with Admin Fee (Mandiri Livin BI-FAST)
+  const sampleReceiptMandiriLivin = `
+Resi Transfer
+Status Transaksi: Berhasil
+Tanggal: 25 Okt 2026
+Waktu: 15:30:45 WIB
+No. Referensi: TR-20261025-99881
+Sumber Dana: MANDIRI TABUNGAN
+Ke Rekening: 1029384756
+Nama Penerima: AHMAD FAUZI
+Bank Penerima: BANK BRI
+Nominal: Rp 750.000
+Biaya Transfer: Rp 2.500
+Total Transaksi: Rp 752.500
+Metode: BI-FAST
+Catatan: Uang Makan Tim
+`;
+
+  const parsedBanking2 = parser.parse(sampleReceiptMandiriLivin);
+  console.log('  Sample 8: Mobile Banking BI-FAST Transfer (Mandiri Livin)');
+  console.log(`    Merchant : ${parsedBanking2.merchant}`);
+  console.log(`    Profile  : ${parsedBanking2.detectedProfile}`);
+  console.log(`    Category : ${parsedBanking2.category}`);
+  console.log(`    Invoice #: ${parsedBanking2.invoiceNumber}`);
+  console.log(`    Payment  : ${parsedBanking2.paymentMethod}`);
+  console.log(`    Total    : Rp ${parsedBanking2.total.toLocaleString('id-ID')}`);
+  console.log(`    Items    : ${parsedBanking2.items.length} item(s)`);
+  parsedBanking2.items.forEach(i => console.log(`      - ${i.description} (${i.qty}x) = Rp ${i.total.toLocaleString('id-ID')}`));
+  console.log(`    Balanced : ${parsedBanking2.validation.isBalanced}`);
+
+  if (parsedBanking2.detectedProfile !== 'banking') {
+    throw new Error(`Expected detectedProfile 'banking', got '${parsedBanking2.detectedProfile}'`);
+  }
+  if (!parsedBanking2.merchant.includes('MANDIRI')) {
+    throw new Error(`Expected Mandiri merchant, got '${parsedBanking2.merchant}'`);
+  }
+  if (parsedBanking2.total !== 752500) {
+    throw new Error(`Expected total 752500, got ${parsedBanking2.total}`);
+  }
+  if (parsedBanking2.items.length !== 2) {
+    throw new Error(`Expected 2 items (transfer + admin fee), got ${parsedBanking2.items.length}`);
+  }
+  if (!parsedBanking2.validation.isBalanced) {
+    throw new Error('Expected math balance to be true');
+  }
+  console.log('  Parsing Mandiri Livin BI-FAST Receipt: PASSED\n');
+
   // 3. Excel Exporter Tests
   console.log('[3/4] Testing Excel Exporter (.xlsx)...');
   const exporter = new ExcelExporter();

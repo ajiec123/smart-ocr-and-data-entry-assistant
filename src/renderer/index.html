@@ -28,6 +28,7 @@
       <!-- Business Profile Selector -->
       <select id="profileSelect" class="select-control" title="Business Category &amp; Parsing Profile">
         <option value="auto">Profile: Auto-Detect</option>
+        <option value="banking">Profile: Mobile Banking &amp; Transfer</option>
         <option value="toll">Profile: Indonesian Tollway (Jasamarga)</option>
         <option value="retail">Profile: Retail / Minimarket (Indomaret)</option>
         <option value="fnb">Profile: Food &amp; Beverage (Kopi Kenangan)</option>
@@ -158,6 +159,7 @@
             <button id="btnBrowseEmpty" class="btn btn-secondary btn-sm" style="margin-top: 4px;">Or Browse Local Files</button>
             <div class="demo-receipt-links" style="margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
               <span>Test with sample receipt:</span>
+              <button type="button" class="btn-demo-link" data-sample="sample_banking.png">m-Banking</button> &bull;
               <button type="button" class="btn-demo-link" data-sample="sample_indomaret.png">Indomaret</button> &bull;
               <button type="button" class="btn-demo-link" data-sample="sample_kopikenangan.png">Kopi Kenangan</button> &bull;
               <button type="button" class="btn-demo-link" data-sample="sample_apotek.png">Apotek</button>

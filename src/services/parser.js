@@ -20,7 +20,8 @@ class ReceiptParser {
       .filter(line => line.length > 0);
 
     const merchant = this._extractMerchant(lines);
-    const isToll = this._isTollReceipt(lines, rawText, merchant);
+    const isBanking = this._isBankingReceipt(lines, rawText, merchant);
+    const isToll = !isBanking && this._isTollReceipt(lines, rawText, merchant);
     const dateInfo = this._extractDate(lines);
     const invoiceNo = this._extractInvoiceNumber(lines);
     const cashier = this._extractCashier(lines);
@@ -31,7 +32,13 @@ class ReceiptParser {
     let category;
     let detectedProfile;
 
-    if (isToll) {
+    if (isBanking) {
+      detectedProfile = 'banking';
+      category = 'Financial & Transfer';
+      const bankingRes = this._extractBankingFinancialsAndItems(lines, rawText, merchant);
+      totals = bankingRes.totals;
+      items = bankingRes.items;
+    } else if (isToll) {
       detectedProfile = 'toll';
       category = 'Transport & Toll';
       const tollRes = this._extractTollFinancialsAndItems(lines, rawText);
@@ -98,7 +105,9 @@ class ReceiptParser {
   }
 
   _extractMerchant(lines) {
-    // Priority 1: Check for nationwide toll operators (Jasa Marga, CMNP, Hutama Karya, Astra Tol)
+    const fullText = lines.join(' ').toUpperCase();
+
+    // Priority 1: Check for nationwide toll operators FIRST (Jasa Marga, CMNP, Hutama Karya, Astra Tol)
     for (const line of lines) {
       const upper = line.toUpperCase();
       if (upper.includes('JASAMARGA') || upper.includes('JASA MARGA') || upper.includes('14080') || upper.includes('INDONESIA HIGHWAY')) {
@@ -130,6 +139,40 @@ class ReceiptParser {
     if (hasTollKeywords) {
       return 'PT JASA MARGA (PERSERO) TBK';
     }
+
+    // Priority 2: Check for Indonesian Mobile Banking apps & Digital Financial Institutions
+    for (let i = 0; i < Math.min(10, lines.length); i++) {
+      const u = lines[i].toUpperCase();
+      if (u.includes('M-TRANSFER') || u.includes('M-BCA') || u.includes('KLIKBCA') || u.includes('BCA MOBILE') || u.includes('MYBCA')) {
+        return 'BANK CENTRAL ASIA (BCA)';
+      }
+      if (u.includes('LIVIN') || u.includes('MANDIRI ONLINE') || (u.includes('MANDIRI') && !u.includes('E-TOLL') && !u.includes('BANK TUJUAN') && !u.includes('BANK PENERIMA'))) {
+        return 'BANK MANDIRI (LIVIN)';
+      }
+      if (u.includes('BRIMO') || (u.includes('BRI') && !u.includes('E-TOLL') && !u.includes('BANK TUJUAN') && !u.includes('BANK PENERIMA') && (u.includes('SUMBER DANA') || u.includes('TRANSAKSI') || u.includes('TABUNGAN BRI')))) {
+        return 'BANK BRI (BRIMO)';
+      }
+      if (u.includes('BNI MOBILE') || (u.includes('BNI') && !u.includes('E-TOLL') && !u.includes('BANK TUJUAN') && !u.includes('BANK PENERIMA') && (u.includes('SUMBER DANA') || u.includes('TRANSAKSI')))) {
+        return 'BANK NEGARA INDONESIA (BNI)';
+      }
+      if (u.includes('BSI MOBILE') || u.includes('BANK SYARIAH INDONESIA')) {
+        return 'BANK SYARIAH INDONESIA (BSI)';
+      }
+      if (u.includes('JENIUS') || u.includes('BTPN')) {
+        return 'BANK BTPN (JENIUS)';
+      }
+      if (u.includes('SEABANK')) return 'SEABANK INDONESIA';
+      if (u.includes('BANK JAGO') || u.includes('JAGO')) return 'BANK JAGO';
+      if (u.includes('DANA INDONESIA') || u.includes('BUKTI TRANSAKSI DANA')) return 'DANA WALLET';
+      if (u.includes('GOPAY')) return 'GOPAY INDONESIA';
+      if (u.includes('OVO')) return 'OVO (PT VISIONET INTERNASIONAL)';
+      if (u.includes('SHOPEEPAY')) return 'SHOPEEPAY';
+    }
+
+    if (fullText.includes('M-TRANSFER') || fullText.includes('M-BCA') || fullText.includes('KLIKBCA')) return 'BANK CENTRAL ASIA (BCA)';
+    if (fullText.includes('LIVIN')) return 'BANK MANDIRI (LIVIN)';
+    if (fullText.includes('BRIMO')) return 'BANK BRI (BRIMO)';
+    if (fullText.includes('BNI MOBILE')) return 'BANK NEGARA INDONESIA (BNI)';
 
     // The merchant is almost always in the first 1-4 lines.
     // Skip lines with dates, receipt headers like "SELAMAT DATANG", wifi, support hotlines, or phone numbers/addresses.
@@ -257,6 +300,7 @@ class ReceiptParser {
 
   _extractInvoiceNumber(lines) {
     const patterns = [
+      /(?:NO\.?\s*REFERENSI|NO\s*REF|NOMOR\s*REFERENSI|REF\s*NO|REFERENCE\s*NO|NO\.?\s*JURNAL|ID\s*TRANSAKSI)[:\s]+([A-Za-z0-9\/-]{4,40})/i,
       /(?:CHECK|CHECK\s*NO|CHEQUE)[.\s:#-]+([A-Za-z0-9\/-]{3,35})/i,
       /(?:NO\.?\s*SERI|SERI|NO\.?\s*RESI|RESI|NO\.?\s*TRANSAKSI|NO\.?\s*STRUK|NO\.?\s*FAKTUR|NO\.?\s*INVOICE|NO\.?\s*NOTA)[:\s]+([A-Za-z0-9\/-]{3,35})/i,
       /(?:STRUK|NOTA|BON|INVOICE|INV|TRANSACTION|RECEIPT|BILL|ORDER)[.\s:#-]+([A-Za-z0-9\/-]{4,30})/i,
@@ -264,7 +308,7 @@ class ReceiptParser {
       /#\s*([A-Za-z0-9\/-]{4,25})/i
     ];
 
-    const labelStop = ['TRANSAKSI', 'STRUK', 'NOTA', 'SERI', 'RESI', 'INVOICE', 'CHECK', 'NOMOR', 'NO'];
+    const labelStop = ['TRANSAKSI', 'STRUK', 'NOTA', 'SERI', 'RESI', 'INVOICE', 'CHECK', 'NOMOR', 'NO', 'REFERENSI', 'REF', 'TRANSFER'];
 
     for (const line of lines) {
       for (const pat of patterns) {
@@ -284,6 +328,179 @@ class ReceiptParser {
       }
     }
     return '';
+  }
+
+  _isBankingReceipt(lines, rawText, merchant = '') {
+    const textUpper = (rawText + ' ' + (merchant || '')).toUpperCase();
+    const bankingKeywords = [
+      'BUKTI TRANSFER', 'BUKTI TRANSAKSI', 'TRANSFER BERHASIL', 'TRANSAKSI BERHASIL',
+      'M-TRANSFER', 'M-BCA', 'KLIKBCA', 'MYBCA', 'LIVIN', 'BRIMO', 'BSI MOBILE',
+      'BI-FAST', 'BI FAST', 'NOMINAL TRANSFER', 'JUMLAH TRANSFER', 'BANK TUJUAN',
+      'BANK PENERIMA', 'REKENING TUJUAN', 'SUMBER DANA', 'DARI REKENING', 'NO. REFERENSI',
+      'NOMOR REFERENSI', 'BIAYA TRANSFER', 'BIAYA ADMIN', 'JENIS TRANSFER'
+    ];
+    let matchCount = 0;
+    for (const kw of bankingKeywords) {
+      if (textUpper.includes(kw)) matchCount++;
+    }
+    return matchCount >= 2 || textUpper.includes('M-TRANSFER') || textUpper.includes('BUKTI TRANSFER') || (textUpper.includes('BI-FAST') && textUpper.includes('TRANSFER'));
+  }
+
+  _extractBankingDetails(lines) {
+    let sender = '';
+    let recipient = '';
+    let bankTarget = '';
+    let notes = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const upper = line.toUpperCase();
+
+      // Recipient / Ke Rekening / Penerima / Nama Penerima
+      const recMatch = line.match(/(?:KE\s*REKENING|PENERIMA|NAMA\s*PENERIMA|KE|TRANSFER\s*KE)[:\s]+(.+)/i);
+      if (recMatch) {
+        const val = recMatch[1].replace(/^[-\s:]+/, '').trim();
+        // If line is "Nama Penerima", prefer it over just account number
+        if (upper.includes('NAMA') || !recipient) {
+          recipient = val;
+        }
+      } else if (upper === 'KE' || upper === 'PENERIMA' || upper === 'NAMA PENERIMA') {
+        if (i + 1 < lines.length) recipient = lines[i + 1].trim();
+      }
+
+      // Sender / Dari Rekening / Pengirim / Sumber Dana
+      if (!sender) {
+        const sendMatch = line.match(/(?:DARI\s*REKENING|SUMBER\s*DANA|PENGIRIM|DARI)[:\s]+(.+)/i);
+        if (sendMatch) {
+          sender = sendMatch[1].replace(/^[-\s:]+/, '').trim();
+        } else if (upper === 'DARI' || upper === 'SUMBER DANA') {
+          if (i + 1 < lines.length) sender = lines[i + 1].trim();
+        }
+      }
+
+      // Destination Bank / Bank Tujuan / Bank Penerima
+      if (!bankTarget) {
+        const bankMatch = line.match(/(?:BANK\s*TUJUAN|BANK\s*PENERIMA|BANK)[:\s]+(.+)/i);
+        if (bankMatch && !upper.includes('DARI') && !upper.includes('SUMBER')) {
+          bankTarget = bankMatch[1].replace(/^[-\s:]+/, '').trim();
+        }
+      }
+
+      // Notes / Berita / Catatan / Keterangan
+      if (!notes) {
+        const noteMatch = line.match(/(?:BERITA\s*\/?\s*CATATAN|BERITA|CATATAN|KETERANGAN|PESAN)[:\s]+(.+)/i);
+        if (noteMatch) {
+          notes = noteMatch[1].replace(/^[-\s:\/]+/, '').trim();
+        }
+      }
+    }
+
+    return { sender, recipient, bankTarget, notes };
+  }
+
+  _extractBankingFinancialsAndItems(lines, rawText, merchant = '') {
+    const details = this._extractBankingDetails(lines);
+    let transferAmount = 0;
+    let adminFee = 0;
+    let grandTotal = 0;
+
+    // Helper to extract amounts robustly
+    const extractAmount = (str) => {
+      const match = str.match(/(?:Rp\.?\s*)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?|\d{4,9})\b/i);
+      return match ? this._cleanAmount(match[1]) : 0;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const upper = line.toUpperCase();
+
+      // Check admin fee / biaya admin / biaya transfer
+      if (upper.includes('BIAYA ADMIN') || upper.includes('BIAYA TRANSFER') || upper.includes('BIAYA TRANSAKSI') || upper.includes('ADMIN FEE')) {
+        if (upper.includes('GRATIS') || upper.includes('FREE') || upper.includes('RP 0') || upper.includes('RP. 0') || upper.includes(' 0,00') || upper.includes(' 0.00')) {
+          adminFee = 0;
+        } else {
+          let amt = extractAmount(line);
+          if (amt === 0 && i + 1 < lines.length) {
+            amt = extractAmount(lines[i + 1]);
+          }
+          adminFee = amt;
+        }
+        continue;
+      }
+
+      // Check nominal / jumlah transfer
+      if (upper.includes('NOMINAL TRANSFER') || upper.includes('JUMLAH TRANSFER') || upper.includes('NOMINAL') || upper.includes('JUMLAH')) {
+        if (!upper.includes('TOTAL') && !upper.includes('BIAYA')) {
+          let amt = extractAmount(line);
+          if (amt === 0 && i + 1 < lines.length) {
+            amt = extractAmount(lines[i + 1]);
+          }
+          if (amt > 0 && transferAmount === 0) {
+            transferAmount = amt;
+          }
+        }
+        continue;
+      }
+
+      // Check total / total transaksi / total transfer
+      if (upper.includes('TOTAL TRANSAKSI') || upper.includes('TOTAL TRANSFER') || upper.includes('TOTAL BAYAR') || (upper.startsWith('TOTAL') && !upper.includes('SUBTOTAL'))) {
+        let amt = extractAmount(line);
+        if (amt === 0 && i + 1 < lines.length) {
+          amt = extractAmount(lines[i + 1]);
+        }
+        if (amt > 0 && grandTotal === 0) {
+          grandTotal = amt;
+        }
+      }
+    }
+
+    // Fallbacks if one of the figures wasn't found explicitly
+    if (transferAmount === 0 && grandTotal > 0) {
+      transferAmount = grandTotal - adminFee;
+    } else if (grandTotal === 0 && transferAmount > 0) {
+      grandTotal = transferAmount + adminFee;
+    }
+
+    const items = [];
+    if (transferAmount > 0) {
+      let desc = 'Transfer Dana';
+      if (details.recipient) {
+        desc = `Transfer ke ${details.recipient}`;
+        if (details.bankTarget) desc += ` (${details.bankTarget})`;
+      } else if (details.bankTarget) {
+        desc = `Transfer ke ${details.bankTarget}`;
+      }
+      if (details.notes) {
+        desc += ` - ${details.notes}`;
+      }
+
+      items.push({
+        description: desc,
+        qty: 1,
+        unitPrice: transferAmount,
+        total: transferAmount
+      });
+    }
+
+    if (adminFee > 0) {
+      items.push({
+        description: 'Biaya Admin (Transfer Fee)',
+        qty: 1,
+        unitPrice: adminFee,
+        total: adminFee
+      });
+    }
+
+    return {
+      totals: {
+        subtotal: transferAmount + adminFee,
+        tax: 0,
+        service: 0,
+        discount: 0,
+        total: grandTotal || (transferAmount + adminFee)
+      },
+      items
+    };
   }
 
   _extractTollDetails(lines) {
@@ -535,6 +752,18 @@ class ReceiptParser {
   _extractPaymentMethod(lines) {
     const upperText = lines.join(' ').toUpperCase();
 
+    // Mobile Banking & Transfer detection
+    if (upperText.includes('BI-FAST') || upperText.includes('BI FAST')) return 'BI-FAST Transfer';
+    if (upperText.includes('REALTIME ONLINE') || upperText.includes('ONLINE TRANSFER') || upperText.includes('TRANSFER ONLINE')) return 'Online Transfer';
+    if (upperText.includes('M-TRANSFER')) return 'm-Transfer BCA';
+    if (upperText.includes('LIVIN')) return 'Livin by Mandiri';
+    if (upperText.includes('BRIMO')) return 'BRImo Transfer';
+    if (upperText.includes('QRIS')) return 'QRIS';
+    if (upperText.includes('DANA')) return 'DANA Wallet';
+    if (upperText.includes('GOPAY')) return 'GoPay';
+    if (upperText.includes('OVO')) return 'OVO';
+    if (upperText.includes('SHOPEEPAY')) return 'ShopeePay';
+
     // Dedicated Indonesian Toll card detection (E-Toll, Flazz, e-Money, Brizzi, TapCash)
     if (upperText.includes('E-TOLL') || upperText.includes('ETOLL') || upperText.includes('E - TOLL')) {
       if (upperText.includes('BCA') || upperText.includes('FLAZZ')) return 'E-Toll BCA (Flazz)';
@@ -550,11 +779,9 @@ class ReceiptParser {
     if (upperText.includes('BRIZZI')) return 'Brizzi BRI';
     if (upperText.includes('TAPCASH')) return 'TapCash BNI';
     if (upperText.includes('LET IT FLO') || upperText.includes('FLO')) return 'Let It Flo';
-    if (upperText.includes('QRIS')) return 'QRIS';
     if (upperText.includes('BCA')) return 'Debit/Credit BCA';
     if (upperText.includes('MANDIRI')) return 'Mandiri';
     if (upperText.includes('DEBIT') || upperText.includes('KREDIT')) return 'Debit/Credit Card';
-    if (upperText.includes('GOPAY')) return 'GoPay';
     if (upperText.includes('SHOPEEPAY') || upperText.includes('SHOPEE PAY')) return 'ShopeePay';
     if (upperText.includes('OVO')) return 'OVO';
     if (upperText.includes('TUNAI') || upperText.includes('CASH')) return 'TUNAI (Cash)';
@@ -577,16 +804,16 @@ class ReceiptParser {
     // Indonesian format: 15.000,00 or 15.000 or 15000
     let clean = str.replace(/[RrpP\s$IDRidr]/g, '');
     
-    // If format is like 12.500,00 -> remove dot, replace comma with dot
-    if (/\d+\.\d{3},\d{2}/.test(clean)) {
+    // If format is like 12.500,00 or 1.500.000,00 -> remove dot, replace comma with dot
+    if (/\d+(?:\.\d{3})+,\d{2}/.test(clean) || /\d+\.\d{3},\d{2}/.test(clean)) {
       clean = clean.replace(/\./g, '').replace(',', '.');
-    } else if (/\d+,\d{3}\.\d{2}/.test(clean)) {
+    } else if (/\d+(?:,\d{3})+\.\d{2}/.test(clean) || /\d+,\d{3}\.\d{2}/.test(clean)) {
       clean = clean.replace(/,/g, '');
-    } else if (/\d+\.\d{3}$/.test(clean)) {
-      // 15.000 -> 15000
+    } else if (/\d+(?:\.\d{3})+$/.test(clean) || /\d+\.\d{3}$/.test(clean)) {
+      // 15.000 or 1.500.000 -> remove thousand separator dots
       clean = clean.replace(/\./g, '');
-    } else if (/\d+,\d{3}$/.test(clean)) {
-      // 15,000 -> 15000
+    } else if (/\d+(?:,\d{3})+$/.test(clean) || /\d+,\d{3}$/.test(clean)) {
+      // 15,000 or 1,500,000 -> remove thousand separator commas
       clean = clean.replace(/,/g, '');
     } else {
       // replace commas with nothing
@@ -893,6 +1120,12 @@ class ReceiptParser {
     const textUpper = (rawText + ' ' + (merchant || '')).toUpperCase();
     const itemNames = items.map(i => i.description.toUpperCase()).join(' ');
 
+    if (textUpper.includes('TRANSFER') || textUpper.includes('M-BCA') || textUpper.includes('LIVIN') ||
+        textUpper.includes('BRIMO') || textUpper.includes('BI-FAST') || textUpper.includes('NOMINAL') ||
+        textUpper.includes('BANK')) {
+      return 'Financial & Transfer';
+    }
+
     if (textUpper.includes('JASAMARGA') ||
         textUpper.includes('JASA MARGA') ||
         textUpper.includes('INFO TOL') ||
@@ -926,6 +1159,18 @@ class ReceiptParser {
 
   _detectProfile(rawText = '', merchant = '', category = '') {
     const textUpper = (rawText + ' ' + merchant + ' ' + category).toUpperCase();
+
+    if (textUpper.includes('M-TRANSFER') ||
+        textUpper.includes('BUKTI TRANSFER') ||
+        textUpper.includes('TRANSFER BERHASIL') ||
+        textUpper.includes('TRANSAKSI BERHASIL') ||
+        textUpper.includes('BI-FAST') ||
+        textUpper.includes('LIVIN') ||
+        textUpper.includes('BRIMO') ||
+        textUpper.includes('NOMINAL TRANSFER') ||
+        (textUpper.includes('BANK') && textUpper.includes('TRANSFER'))) {
+      return 'banking';
+    }
 
     if (textUpper.includes('JASAMARGA') ||
         textUpper.includes('JASA MARGA') ||
